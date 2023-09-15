@@ -101,7 +101,10 @@ def train_bolling_model_co(df):
 
     del df
 
-    with tf.device('/GPU:0' if physical_devices else '/CPU:0'):
+    strategy = tf.distribute.MirroredStrategy()
+    print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
+    with strategy.scope():
         # 定义回调列表
         callbacks_list = [
             EarlyStopping(
