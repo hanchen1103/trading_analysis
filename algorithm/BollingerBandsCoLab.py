@@ -23,8 +23,8 @@ def extract_sequence(df):
         if current_label in {3, 6}:
             # Determine the minimum start index to get at least a length of 12
             t = df.iloc[last_break_point:index + 1]
-            if len(t) < 60:
-                i = max(0, index - 59)
+            if len(t) < 40:
+                i = max(0, index - 40)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
             last_break_point = index + 1
@@ -33,7 +33,7 @@ def extract_sequence(df):
         sequences.append(df.iloc[last_break_point:])
 
     for i, seq in enumerate(sequences):
-        if len(seq) > 370:
+        if len(seq) > 300:
 
             # Find the indices of the mid labels
             mid_labels_indices = seq[(seq['break_label'] == 2) |
