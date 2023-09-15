@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
-import talib
 
 from sklearn.cluster import KMeans
+import talib
 
 from dao.KLineDataDao import get_kline_data
 from foundation.Logger import logger

@@ -1,5 +1,3 @@
-import datetime
-
 import tensorflow as tf
 from keras import layers, models
 from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
