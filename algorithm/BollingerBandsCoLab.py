@@ -74,6 +74,14 @@ def lr_schedule_co(epoch, lr):
 
 
 def train_bolling_model_co(df):
+    # 检查GPU是否可用
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if physical_devices:
+        print(f'Found {len(physical_devices)} GPU(s)')
+        tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    else:
+        print('No GPU found, using CPU')
+
     train_data, test_data = split_bolling_train_data_co(df)
 
     model = build_bolling_time_series_transformer_model_co(train_data)
@@ -93,29 +101,30 @@ def train_bolling_model_co(df):
 
     del df
 
-    # 定义回调列表
-    callbacks_list = [
-        EarlyStopping(
-            monitor='val_loss',
-            patience=5,
-            restore_best_weights=True
-        ),  # 停止训练当验证损失不再改善
-        ModelCheckpoint(
-            filepath='../static/model/best_model.h5',
-            monitor='val_loss',
-            save_best_only=True
-        ),  # 保存验证损失最低的模型
-        LearningRateScheduler(lr_schedule_co),
-    ]
+    with tf.device('/GPU:0' if physical_devices else '/CPU:0'):
+        # 定义回调列表
+        callbacks_list = [
+            EarlyStopping(
+                monitor='val_loss',
+                patience=5,
+                restore_best_weights=True
+            ),  # 停止训练当验证损失不再改善
+            ModelCheckpoint(
+                filepath='../static/model/best_model.h5',
+                monitor='val_loss',
+                save_best_only=True
+            ),  # 保存验证损失最低的模型
+            LearningRateScheduler(lr_schedule_co),
+        ]
 
-    history = model.fit(
-        X_train,
-        {"break_output": y_train_break, "take_profit_output": y_train_take_profit},
-        validation_data=(X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit}),
-        epochs=50,  # 你可以根据需要更改epoch的数量
-        batch_size=36,  # 你可以更改batch size
-        callbacks=callbacks_list  # 为模型训练添加回调列表
-    )
+        history = model.fit(
+            X_train,
+            {"break_output": y_train_break, "take_profit_output": y_train_take_profit},
+            validation_data=(X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit}),
+            epochs=50,  # 你可以根据需要更改epoch的数量
+            batch_size=36,  # 你可以更改batch size
+            callbacks=callbacks_list  # 为模型训练添加回调列表
+        )
 
     loss, break_loss, take_profit_loss, break_accuracy, take_profit_accuracy = model.evaluate(
         X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit})
