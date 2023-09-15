@@ -2,7 +2,7 @@ import datetime
 
 import tensorflow as tf
 from keras import layers, models
-from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler, TensorBoard
+from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
 
 from algorithm.FeatureEngineering import create_bollinger_bands_feature
 from algorithm.common import BREAK_LABEL, TAKE_PROFIT_LABEL
@@ -96,9 +96,6 @@ def train_bolling_model(df):
 
     del df
 
-    log_dir = "../static/logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = TensorBoard(log_dir=log_dir, histogram_freq=1)
-
     # 定义回调列表
     callbacks_list = [
         EarlyStopping(
@@ -112,7 +109,6 @@ def train_bolling_model(df):
             save_best_only=True
         ),  # 保存验证损失最低的模型
         LearningRateScheduler(lr_schedule),
-        tensorboard_callback
     ]
 
     history = model.fit(
