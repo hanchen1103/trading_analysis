@@ -44,7 +44,8 @@ def extract_sequence(df):
             end_break_idx = mid_labels_indices[-1]
 
             # Find the indices to keep (those with TAKE_PROFIT_LABEL as 1)
-            take_profit_indices = seq.loc[start_break_idx:end_break_idx][seq['take_profit_label'] == 1].index
+            subset_seq = seq.loc[start_break_idx:end_break_idx]
+            take_profit_indices = subset_seq[subset_seq['take_profit_label'] == 1].index
 
             # Determine the indices to potentially remove (excluding the take profit indices)
             potential_remove_indices = set(mid_labels_indices) - set(take_profit_indices)
@@ -58,7 +59,7 @@ def extract_sequence(df):
     return sequences
 
 
-def build_bolling_time_series_transformer_model_co(df, num_layers=4, dff=128, num_heads=8, dropout_rate=0.5):
+def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num_heads=4, dropout_rate=0.5):
     feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
 
     # 定义模型的输入
@@ -208,11 +209,15 @@ def train_bolling_model_co(df):
     return model, history
 
 
-filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
-#  filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
+## filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
+filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath):
-    print(f"Loading existing feature file: {filepath}")
-    df = pd.read_csv(filepath)
-m, h = train_bolling_model_co(df)
+if os.path.exists(filepath_):
+    print(f"Loading existing feature file: {filepath_}")
+    df = pd.read_csv(filepath_)
+se = extract_sequence(df)
+max_sequence_length = max(map(len, se))
+print(f"The longest sequence has {max_sequence_length} rows.")
+
+
