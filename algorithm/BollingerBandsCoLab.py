@@ -209,13 +209,13 @@ def train_bolling_model_co(df):
     return model, history
 
 
-## filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
+filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath_):
-    print(f"Loading existing feature file: {filepath_}")
-    df = pd.read_csv(filepath_)
+if os.path.exists(filepath):
+    print(f"Loading existing feature file: {filepath}")
+    df = pd.read_csv(filepath)
 se = extract_sequence(df)
 max_sequence_length = max(map(len, se))
 print(f"The longest sequence has {max_sequence_length} rows.")
