@@ -212,9 +212,9 @@ filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_3
 filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath_):
-    print(f"Loading existing feature file: {filepath_}")
-    df = pd.read_csv(filepath_)
+if os.path.exists(filepath):
+    print(f"Loading existing feature file: {filepath}")
+    df = pd.read_csv(filepath)
 
 m, h = train_bolling_model_co(df)
 print(h)
