@@ -3,7 +3,7 @@ from keras import layers, models
 from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
 
 from algorithm.FeatureEngineering import create_bollinger_bands_feature
-from algorithm.common import BREAK_LABEL, TAKE_PROFIT_LABEL
+from algorithm.common import *
 from foundation.Logger import logger
 
 
@@ -13,10 +13,33 @@ def split_bolling_train_data(df):
     return train_data, test_data
 
 
+def extract_sequence(df):
+    sequences = []
+
+    last_break_point = 0
+
+    for index, row in df.iterrows():
+        current_label = row[BREAK_LABEL]
+        if current_label in {TRUE_BREAK_END_LABEL, FAKE_BREAK_END_LABEL}:
+            # Determine the minimum start index to get at least a length of 12
+            t = df.iloc[last_break_point:index + 1]
+            if len(t) < 100:
+                i = max(0, index - 99)
+                t = df.iloc[i:index + 1]
+            sequences.append(t)
+            last_break_point = index + 1
+
+    if last_break_point < len(df):
+        sequences.append(df.iloc[last_break_point:])
+
+    return sequences
+
+
 def build_bolling_time_series_transformer_model(df, num_layers=4, dff=128, num_heads=8, dropout_rate=0.5):
     sequence_length = df.shape[0]  # 获取序列长度
     feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
 
+    sequences = extract_sequence(df)
     # 定义模型的输入
     inputs = layers.Input(shape=(None, feature_count))
 
@@ -128,4 +151,10 @@ def train_bolling_model(df):
 
 
 d = create_bollinger_bands_feature('perpusdt', '5m', 290, 0.6, 32, 0)
-train_bolling_model(d)
+se = extract_sequence(d)
+# for i, seq in enumerate(sequences):
+#     print(f"Sequence {i} BREAK_LABEL sequence:")
+#     print(seq[BREAK_LABEL].to_list())
+
+max_length = max(len(seq) for seq in se)
+print(f"The maximum sequence length is: {max_length}")

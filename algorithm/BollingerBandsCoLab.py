@@ -12,17 +12,40 @@ def split_bolling_train_data_co(df):
     return train_data, test_data
 
 
-def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num_heads=6, dropout_rate=0.5):
-    sequence_length = df.shape[0]  # 获取序列长度
+def extract_sequence(df):
+    sequences = []
+
+    last_break_point = 0
+
+    for index, row in df.iterrows():
+        current_label = row['break_label']
+        if current_label in {3, 6}:
+            # Determine the minimum start index to get at least a length of 12
+            t = df.iloc[last_break_point:index + 1]
+            if len(t) < 100:
+                i = max(0, index - 99)
+                t = df.iloc[i:index + 1]
+            sequences.append(t)
+            last_break_point = index + 1
+
+    if last_break_point < len(df):
+        sequences.append(df.iloc[last_break_point:])
+
+    return sequences
+
+
+def build_bolling_time_series_transformer_model_co(df, num_layers=4, dff=128, num_heads=8, dropout_rate=0.5):
     feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
 
     # 定义模型的输入
     inputs = layers.Input(shape=(None, feature_count))
 
     # 首先添加一个位置编码层来引入序列中每个点的位置信息
-    positional_encoding = layers.Embedding(input_dim=sequence_length, output_dim=feature_count)(
-        tf.range(start=0, limit=sequence_length, delta=1))
-    x = inputs + positional_encoding
+    x = inputs
+    positional_encoding_layer = layers.experimental.preprocessing.CategoryEncoding(
+        max_tokens=10000, output_mode="binary")
+    positional_encoding = positional_encoding_layer(tf.range(start=0, limit=10000, delta=1))
+    x = layers.Add()([x, positional_encoding[:tf.shape(x)[1]]])
 
     # 添加一个transformer层
     for _ in range(num_layers):
@@ -42,6 +65,9 @@ def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num
     # 添加一个时间分布式Dense层来代替全局平均池化层
     x = layers.TimeDistributed(layers.Dense(128, activation='relu'))(x)
 
+    # 新增的全局平均池化层
+    x = layers.GlobalAveragePooling1D()(x)
+
     # 添加一个或多个Dense层来进行分类
     x = layers.Dropout(dropout_rate)(x)
     x = layers.Dense(64, activation="relu")(x)
@@ -55,7 +81,7 @@ def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num
     model = models.Model(inputs, [break_output, take_profit_output])
 
     # 编译模型
-    optimizer = tf.keras.optimizers.legacy.Adam()
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
 
     model.compile(loss={"break_output": "sparse_categorical_crossentropy", "take_profit_output": "binary_crossentropy"},
                   loss_weights={"break_output": 1.0, "take_profit_output": 0.5},
@@ -84,18 +110,41 @@ def train_bolling_model_co(df):
 
     train_data, test_data = split_bolling_train_data_co(df)
 
+    train_sequences = extract_sequence(train_data)
+    test_sequences = extract_sequence(test_data)
+
     col = ['break_label', 'take_profit_label', 'id', 'close_time']
 
-    X_train = train_data.drop(columns=col)
-    y_train_break = train_data['break_label']
-    y_train_take_profit = train_data['take_profit_label']
+    feature_count = df.shape[1] - len(col)
 
-    X_test = test_data.drop(columns=col)
-    y_test_break = test_data['break_label']
-    y_test_take_profit = test_data['take_profit_label']
+    def gen(sequences):
+        for seq in sequences:
+            X = seq.drop(columns=col).values
+            y_break = seq['break_label'].values
+            y_take_profit = seq['take_profit_label'].values
+            yield X, {"break_output": y_break, "take_profit_output": y_take_profit}
 
-    X_train = X_train.values.reshape((X_train.shape[0], 1, X_train.shape[1]))
-    X_test = X_test.values.reshape((X_test.shape[0], 1, X_test.shape[1]))
+    train_dataset = tf.data.Dataset.from_generator(
+        lambda: gen(train_sequences),
+        output_signature=(
+            tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
+            {
+                "break_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+                "take_profit_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+            },
+        ),
+    )
+
+    test_dataset = tf.data.Dataset.from_generator(
+        lambda: gen(test_sequences),
+        output_signature=(
+            tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
+            {
+                "break_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+                "take_profit_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+            },
+        ),
+    )
 
     del df
 
@@ -111,7 +160,7 @@ def train_bolling_model_co(df):
                 restore_best_weights=True
             ),  # 停止训练当验证损失不再改善
             ModelCheckpoint(
-                filepath='../static/model/best_model.h5',
+                filepath='/content/trading_analysis/static/model/best_model.h5',
                 monitor='val_loss',
                 save_best_only=True
             ),  # 保存验证损失最低的模型
@@ -121,16 +170,13 @@ def train_bolling_model_co(df):
         model = build_bolling_time_series_transformer_model_co(train_data)
 
         history = model.fit(
-            X_train,
-            {"break_output": y_train_break, "take_profit_output": y_train_take_profit},
-            validation_data=(X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit}),
-            epochs=50,  # 你可以根据需要更改epoch的数量
-            batch_size=12,  # 你可以更改batch size
-            callbacks=callbacks_list  # 为模型训练添加回调列表
+            train_dataset.batch(1),  # Setting batch size to 1 to handle sequences one by one
+            validation_data=test_dataset.batch(1),  # Same for the validation dataset
+            epochs=50,
+            callbacks=callbacks_list
         )
 
-    loss, break_loss, take_profit_loss, break_accuracy, take_profit_accuracy = model.evaluate(
-        X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit})
+    loss, break_loss, take_profit_loss, break_accuracy, take_profit_accuracy = model.evaluate(test_dataset.batch(1))
 
     print(f"Break output accuracy: {break_accuracy * 100:.2f}%")
     print(f"Take profit output accuracy: {take_profit_accuracy * 100:.2f}%")
@@ -139,12 +185,11 @@ def train_bolling_model_co(df):
 
 
 filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
+filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath):
-    print(f"Loading existing feature file: {filepath}")
-    df = pd.read_csv(filepath)
+if os.path.exists(filepath_):
+    print(f"Loading existing feature file: {filepath_}")
+    df = pd.read_csv(filepath_)
 print(df)
 m, h = train_bolling_model_co(df)
-print(h)
-
