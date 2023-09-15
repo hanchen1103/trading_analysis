@@ -12,7 +12,7 @@ def split_bolling_train_data_co(df):
     return train_data, test_data
 
 
-def build_bolling_time_series_transformer_model_co(df, num_layers=4, dff=128, num_heads=8, dropout_rate=0.5):
+def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num_heads=6, dropout_rate=0.5):
     sequence_length = df.shape[0]  # 获取序列长度
     feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
 
@@ -125,7 +125,7 @@ def train_bolling_model_co(df):
             {"break_output": y_train_break, "take_profit_output": y_train_take_profit},
             validation_data=(X_test, {"break_output": y_test_break, "take_profit_output": y_test_take_profit}),
             epochs=50,  # 你可以根据需要更改epoch的数量
-            batch_size=36,  # 你可以更改batch size
+            batch_size=12,  # 你可以更改batch size
             callbacks=callbacks_list  # 为模型训练添加回调列表
         )
 
