@@ -216,8 +216,7 @@ df = None
 if os.path.exists(filepath):
     print(f"Loading existing feature file: {filepath}")
     df = pd.read_csv(filepath)
-se = extract_sequence(df)
-max_sequence_length = max(map(len, se))
-print(f"The longest sequence has {max_sequence_length} rows.")
+m, history = build_bolling_time_series_transformer_model_co(df)
+print(history)
 
 
