@@ -191,5 +191,4 @@ df = None
 if os.path.exists(filepath):
     print(f"Loading existing feature file: {filepath}")
     df = pd.read_csv(filepath)
-print(df)
 m, h = train_bolling_model_co(df)
