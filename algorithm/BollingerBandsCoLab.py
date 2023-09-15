@@ -34,7 +34,6 @@ def extract_sequence(df):
 
     for i, seq in enumerate(sequences):
         if len(seq) > 300:
-
             # Find the indices of the mid labels
             mid_labels_indices = seq[(seq['break_label'] == 2) |
                                      (seq['break_label'] == 5)].index
@@ -154,8 +153,8 @@ def train_bolling_model_co(df):
         output_signature=(
             tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
             {
-                "break_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
-                "take_profit_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+                "break_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                "take_profit_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
             },
         ),
     )
@@ -165,8 +164,8 @@ def train_bolling_model_co(df):
         output_signature=(
             tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
             {
-                "break_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
-                "take_profit_output": tf.TensorSpec(shape=(None, ), dtype=tf.int32),
+                "break_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
+                "take_profit_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
             },
         ),
     )
@@ -213,10 +212,9 @@ filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_3
 filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath):
-    print(f"Loading existing feature file: {filepath}")
-    df = pd.read_csv(filepath)
-m, history = build_bolling_time_series_transformer_model_co(df)
-print(history)
+if os.path.exists(filepath_):
+    print(f"Loading existing feature file: {filepath_}")
+    df = pd.read_csv(filepath_)
 
-
+m, h = train_bolling_model_co(df)
+print(h)
