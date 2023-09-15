@@ -1,4 +1,5 @@
 import os
+import random
 
 import pandas as pd
 import tensorflow as tf
@@ -22,14 +23,37 @@ def extract_sequence(df):
         if current_label in {3, 6}:
             # Determine the minimum start index to get at least a length of 12
             t = df.iloc[last_break_point:index + 1]
-            if len(t) < 100:
-                i = max(0, index - 99)
+            if len(t) < 60:
+                i = max(0, index - 59)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
             last_break_point = index + 1
 
     if last_break_point < len(df):
         sequences.append(df.iloc[last_break_point:])
+
+    for i, seq in enumerate(sequences):
+        if len(seq) > 370:
+
+            # Find the indices of the mid labels
+            mid_labels_indices = seq[(seq['break_label'] == 2) |
+                                     (seq['break_label'] == 5)].index
+
+            # Identify the start and end indices for the break
+            start_break_idx = mid_labels_indices[0]
+            end_break_idx = mid_labels_indices[-1]
+
+            # Find the indices to keep (those with TAKE_PROFIT_LABEL as 1)
+            take_profit_indices = seq.loc[start_break_idx:end_break_idx][seq['take_profit_label'] == 1].index
+
+            # Determine the indices to potentially remove (excluding the take profit indices)
+            potential_remove_indices = set(mid_labels_indices) - set(take_profit_indices)
+
+            # Remove half of the potential_remove_indices
+            indices_to_remove = random.sample(potential_remove_indices, len(potential_remove_indices) // 2)
+
+            # Update the sequence in the list
+            sequences[i] = seq.drop(index=indices_to_remove)
 
     return sequences
 
@@ -43,7 +67,7 @@ def build_bolling_time_series_transformer_model_co(df, num_layers=4, dff=128, nu
     # 首先添加一个位置编码层来引入序列中每个点的位置信息
     x = inputs
     positional_encoding_layer = layers.experimental.preprocessing.CategoryEncoding(
-        max_tokens=10000, output_mode="binary")
+        num_tokens=10000, output_mode="binary")
     positional_encoding = positional_encoding_layer(tf.range(start=0, limit=10000, delta=1))
     x = layers.Add()([x, positional_encoding[:tf.shape(x)[1]]])
 

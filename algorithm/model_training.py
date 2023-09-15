@@ -19,12 +19,12 @@ def extract_sequence(df):
     last_break_point = 0
 
     for index, row in df.iterrows():
-        current_label = row[BREAK_LABEL]
-        if current_label in {TRUE_BREAK_END_LABEL, FAKE_BREAK_END_LABEL}:
+        current_label = row['break_label']
+        if current_label in {3, 6}:
             # Determine the minimum start index to get at least a length of 12
             t = df.iloc[last_break_point:index + 1]
-            if len(t) < 100:
-                i = max(0, index - 99)
+            if len(t) < 60:
+                i = max(0, index - 59)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
             last_break_point = index + 1
@@ -32,10 +32,33 @@ def extract_sequence(df):
     if last_break_point < len(df):
         sequences.append(df.iloc[last_break_point:])
 
+    for i, seq in enumerate(sequences):
+        if len(seq) > 400:
+
+            # Find the indices of the mid labels
+            mid_labels_indices = seq[(seq['break_label'] == 2) |
+                                     (seq['break_label'] == 5)].index
+
+            # Identify the start and end indices for the break
+            start_break_idx = mid_labels_indices[0]
+            end_break_idx = mid_labels_indices[-1]
+
+            # Find the indices to keep (those with TAKE_PROFIT_LABEL as 1)
+            take_profit_indices = seq.loc[start_break_idx:end_break_idx][seq['take_profit_label'] == 1].index
+
+            # Determine the indices to potentially remove (excluding the take profit indices)
+            potential_remove_indices = set(mid_labels_indices) - set(take_profit_indices)
+
+            # Remove half of the potential_remove_indices
+            indices_to_remove = random.sample(potential_remove_indices, len(potential_remove_indices) // 2)
+
+            # Update the sequence in the list
+            sequences[i] = seq.drop(index=indices_to_remove)
+
     return sequences
 
 
-def build_bolling_time_series_transformer_model(df, num_layers=4, dff=128, num_heads=8, dropout_rate=0.5):
+def build_bolling_time_series_transformer_model(df, num_layers=8, dff=256, num_heads=12, dropout_rate=0.5):
     sequence_length = df.shape[0]  # 获取序列长度
     feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
 
