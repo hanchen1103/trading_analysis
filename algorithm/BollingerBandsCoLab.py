@@ -84,8 +84,6 @@ def train_bolling_model_co(df):
 
     train_data, test_data = split_bolling_train_data_co(df)
 
-    model = build_bolling_time_series_transformer_model_co(train_data)
-
     col = ['break_label', 'take_profit_label', 'id', 'close_time']
 
     X_train = train_data.drop(columns=col)
@@ -120,6 +118,8 @@ def train_bolling_model_co(df):
             LearningRateScheduler(lr_schedule_co),
         ]
 
+        model = build_bolling_time_series_transformer_model_co(train_data)
+
         history = model.fit(
             X_train,
             {"break_output": y_train_break, "take_profit_output": y_train_take_profit},
@@ -138,13 +138,13 @@ def train_bolling_model_co(df):
     return model, history
 
 
-filename = f"feature_perpusdt_5m_290_0.6_32_0.csv"
-dir_path = "../static/cache"
-filepath = os.path.join(dir_path, filename)
+filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
 if os.path.exists(filepath):
     print(f"Loading existing feature file: {filepath}")
     df = pd.read_csv(filepath)
+print(df)
 m, h = train_bolling_model_co(df)
 print(h)
+
