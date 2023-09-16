@@ -145,11 +145,11 @@ def train_bolling_model_co(label_feature_list):
                 patience=5,
                 restore_best_weights=True
             ),  # 停止训练当验证损失不再改善
-            ModelCheckpoint(
-                filepath='/content/trading_analysis/static/model/bollinger_break_model.keras',
-                monitor='val_loss',
-                save_best_only=True
-            ),  # 保存验证损失最低的模型
+            # ModelCheckpoint(
+            #     filepath='/content/trading_analysis/static/model/bollinger_break_model.keras',
+            #     monitor='val_loss',
+            #     save_best_only=True
+            # ),  # 保存验证损失最低的模型
             LearningRateScheduler(lr_schedule_co),
         ]
 
