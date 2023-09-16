@@ -185,7 +185,7 @@ def train_bolling_model_co(df):
                 restore_best_weights=True
             ),  # 停止训练当验证损失不再改善
             ModelCheckpoint(
-                filepath='/content/trading_analysis/static/model/best_model.h5',
+                filepath='/content/trading_analysis/static/model/bollinger_break_model.h5',
                 monitor='val_loss',
                 save_best_only=True
             ),  # 保存验证损失最低的模型
@@ -206,6 +206,7 @@ def train_bolling_model_co(df):
     print(f"Break output accuracy: {break_accuracy * 100:.2f}%")
     print(f"Take profit output accuracy: {take_profit_accuracy * 100:.2f}%")
 
+    model.save("/content/trading_analysis/static/model/bollinger_break_model.h5")
     return model, history
 
 
@@ -217,4 +218,5 @@ if os.path.exists(filepath):
     print(f"Loading existing feature file: {filepath}")
     df = pd.read_csv(filepath)
 
-train_bolling_model_co(df)
+m, h = train_bolling_model_co(df)
+print(h)
