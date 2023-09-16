@@ -26,8 +26,8 @@ def extract_sequence(df):
         current_label = row['break_label']
         if current_label in {3, 6}:
             t = df.iloc[last_break_end_point:index + 1]
-            if len(t) < 52:
-                i = max(0, index - 52)
+            if len(t) < 36:
+                i = max(0, index - 36)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
             last_break_end_point = index
