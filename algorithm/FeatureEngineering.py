@@ -1,4 +1,5 @@
 import os
+import pickle
 import pandas as pd
 from typing import List
 from algorithm.common import *
@@ -10,15 +11,14 @@ from util.time import convert_str_to_unix_time_mil
 
 def create_bollinger_bands_feature(symbol, interval, length, std_dev, start_day, end_day):
     init_logger()
-    filename = f"feature_{symbol}_{interval}_{length}_{std_dev}_{start_day}_{end_day}.csv"
+    filename = f"feature_{symbol}_{interval}_{length}_{std_dev}_{start_day}_{end_day}.pkl"
     dir_path = "../static/cache"
     filepath = os.path.join(dir_path, filename)
 
     if os.path.exists(filepath):
         logger.info(f"Loading existing feature file: {filepath}")
-        return pd.read_csv(filepath)
-
-    logger.info(f"Creating new feature file: {filepath}")
+        with open(filepath, 'rb') as f:
+            return pickle.load(f)
 
     df = calculate_all_technical_indicator(symbol, interval, start_day, end_day)
     req = BacktestRequest(
@@ -31,43 +31,36 @@ def create_bollinger_bands_feature(symbol, interval, length, std_dev, start_day,
         volume=3000
     )
     trading_records = get_bolling_backtest(req).tradingRecords
-    df = create_bollinger_bands_labels(trading_records, df)
     df = create_moving_window(df)
     df.fillna(method='bfill', inplace=True)
+    feature_label_map = create_bollinger_bands_labels(trading_records, df)
+    print(feature_label_map)
+    with open(filepath, 'wb') as f:
+        pickle.dump(feature_label_map, f)
 
-    df.to_csv(filepath, index=False)
     logger.info(f"Feature file created and saved to: {filepath}")
-    return df
+    return feature_label_map
 
 
-def create_bollinger_bands_labels(trading_records: List[TradingRecord], k_lines: pd.DataFrame) -> pd.DataFrame:
-    # Step 1: Create a new column for labels and initialize it with NO_BREAK_LABEL
-    k_lines[BREAK_LABEL] = NO_BREAK_LABEL
-    k_lines[TAKE_PROFIT_LABEL] = 0
-    # Step 2 & 3: Set the correct labels based on the trading records
+def create_bollinger_bands_labels(trading_records: List[TradingRecord], k_lines: pd.DataFrame):
+    labeled_sequences = []
+
     for record in trading_records:
+        # 找到startTime和endTime对应的K线数据
+        break_idx = k_lines[k_lines['close_time'] == convert_str_to_unix_time_mil(record.startTime)].index[0]
 
-        start_time = convert_str_to_unix_time_mil(record.startTime)
-        end_time = convert_str_to_unix_time_mil(record.endTime)
-        max_profit_time = convert_str_to_unix_time_mil(record.maxProfitTime)
+        start_idx = max(break_idx - 6 * 12, 0)
 
-        start_index = k_lines[k_lines['close_time'] == start_time].index[0]
-        end_index = k_lines[k_lines['close_time'] == end_time].index[0]
-        max_profit_index = k_lines[k_lines['close_time'] == max_profit_time].index[0]
+        # 提取该时间段内的K线序列
+        sequence = k_lines.iloc[start_idx:break_idx + 1]
 
-        # Set the label based on the record properties
-        if record.isFakeBreak:
-            k_lines.loc[start_index, BREAK_LABEL] = FAKE_BREAK_START_LABEL
-            k_lines.loc[start_index + 1:end_index - 1, BREAK_LABEL] = FAKE_BREAK_MID_LABEL
-            k_lines.loc[end_index, BREAK_LABEL] = FAKE_BREAK_END_LABEL
-        else:
-            k_lines.loc[start_index, BREAK_LABEL] = TRUE_BREAK_START_LABEL
-            k_lines.loc[start_index + 1:end_index - 1, BREAK_LABEL] = TRUE_BREAK_MID_LABEL
-            k_lines.loc[end_index, BREAK_LABEL] = TRUE_BREAK_END_LABEL
+        # 确定标签：如果isFakeBreak为True，则标签为'假突破'，否则为'真突破'
+        label = FAKE_BREAK_START_LABEL if record.isFakeBreak else TRUE_BREAK_START_LABEL
 
-        k_lines.loc[max_profit_index, TAKE_PROFIT_LABEL] = 1
-    logger.info('mark label success')
-    return k_lines
+        # 创建一个包含序列和标签的字典，并添加到结果列表中
+        labeled_sequences.append({"sequence": sequence, "label": label})
+
+    return labeled_sequences
 
 
 def create_moving_window(data_frame):
@@ -99,3 +92,10 @@ def create_moving_window(data_frame):
     data_frame['rolling_volume_std'] = v.rolling(window=window_size).std()
 
     return data_frame
+
+
+m = create_bollinger_bands_feature('perpusdt', '5m', 290, 0.6, 32, 0)
+sequence_length = len(m)  # 获取序列长度
+print(sequence_length)
+feature_count = m[0]['sequence'].shape[1] - 4
+print(feature_count)

@@ -1,5 +1,5 @@
 import os
-import random
+import pickle
 
 import pandas as pd
 import tensorflow as tf
@@ -8,70 +8,41 @@ from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateSche
 
 
 def split_bolling_train_data_co(sequence):
-    # 计算90%的位置
-    train_size = int(len(sequence) * 0.9)
+    # 确定80%的点以分割数据集
+    split_point = int(len(sequence) * 0.8)
 
-    train_data = sequence[:train_size]
-    test_data = sequence[train_size:]
+    # 使用切片语法来分割数据集
+    train_data = sequence[:split_point]
+    test_data = sequence[split_point:]
 
     return train_data, test_data
 
 
-def extract_sequence(df):
-    sequences = []
+def get_positional_encoding(seq_len, feature_count):
+    pos = tf.range(seq_len, dtype=tf.float32)[:, tf.newaxis]
+    div_term = tf.exp(tf.range(0.0, feature_count, 2.0) * -(tf.math.log(10000.0) / feature_count))
 
-    last_break_end_point = 0
+    positional_encoding = tf.zeros((seq_len, feature_count))
 
-    for index, row in df.iterrows():
-        current_label = row['break_label']
-        if current_label in {3, 6}:
-            t = df.iloc[last_break_end_point:index + 1]
-            if len(t) < 52:
-                i = max(0, index - 52)
-                t = df.iloc[i:index + 1]
-            sequences.append(t)
-            last_break_end_point = index
+    positional_encoding = positional_encoding.numpy()
+    positional_encoding[:, 0::2] = tf.sin(pos * div_term)
+    positional_encoding[:, 1::2] = tf.cos(pos * div_term)
 
-    if last_break_end_point < len(df):
-        sequences.append(df.iloc[last_break_end_point:])
-
-    for i, seq in enumerate(sequences):
-        if len(seq) > 300:
-            # Find the indices of the mid labels
-            mid_labels_indices = seq[(seq['break_label'] == 2) |
-                                     (seq['break_label'] == 5)].index
-
-            # Identify the start and end indices for the break
-            start_break_idx = mid_labels_indices[0]
-            end_break_idx = mid_labels_indices[-1]
-
-            # Find the indices to keep (those with TAKE_PROFIT_LABEL as 1)
-            subset_seq = seq.loc[start_break_idx:end_break_idx]
-            take_profit_indices = subset_seq[subset_seq['take_profit_label'] == 1].index
-
-            # Determine the indices to potentially remove (excluding the take profit indices)
-            potential_remove_indices = set(mid_labels_indices) - set(take_profit_indices)
-
-            # Remove half of the potential_remove_indices
-            indices_to_remove = random.sample(list(potential_remove_indices), len(potential_remove_indices) // 2)
-
-            # Update the sequence in the list
-            sequences[i] = seq.drop(index=indices_to_remove)
-
-    return sequences
+    positional_encoding = tf.convert_to_tensor(positional_encoding)
+    positional_encoding = positional_encoding[tf.newaxis, ...]
+    return positional_encoding
 
 
-def build_bolling_time_series_transformer_model_co(feature_count, num_layers=6, dff=256, num_heads=8, dropout_rate=0.5):
-
+def build_bolling_time_series_transformer_model_co(feature_count, seq_len, num_layers=6, dff=256, num_heads=8,
+                                                   dropout_rate=0.5):
     # 定义模型的输入
     inputs = layers.Input(shape=(None, feature_count))
 
     # 首先添加一个位置编码层来引入序列中每个点的位置信息
     x = inputs
-    positional_encoding_layer = layers.experimental.preprocessing.CategoryEncoding(
-        num_tokens=10000, output_mode="binary")
-    positional_encoding = positional_encoding_layer(tf.range(start=0, limit=10000, delta=1))
-    x = layers.Add()([x, positional_encoding[:tf.shape(x)[1]]])
+    positional_encoding = get_positional_encoding(seq_len,
+                                                  feature_count)  # Adjust 10000 based on your max sequence length
+    x = layers.Add()([x, positional_encoding[:, :tf.shape(x)[1], :]])
 
     # 添加一个transformer层
     for _ in range(num_layers):
@@ -88,11 +59,8 @@ def build_bolling_time_series_transformer_model_co(feature_count, num_layers=6, 
         x = layers.LayerNormalization(epsilon=1e-6)(x)
         x = layers.Dropout(dropout_rate)(x)  # 添加dropout层
 
-    # 添加一个时间分布式Dense层来代替全局平均池化层
-    x = layers.TimeDistributed(layers.Dense(128, activation='relu'))(x)
-
-    # 新增的全局平均池化层
-    x = layers.GlobalAveragePooling1D()(x)
+    # 用数组切片来获取每个序列的最后一个时间步
+    x = layers.Lambda(lambda t: t[:, -1, :])(x)
 
     # 添加一个或多个Dense层来进行分类
     x = layers.Dropout(dropout_rate)(x)
@@ -100,19 +68,16 @@ def build_bolling_time_series_transformer_model_co(feature_count, num_layers=6, 
     x = layers.Dropout(dropout_rate)(x)
 
     # 使用softmax激活函数的输出层
-    break_output = layers.Dense(7, activation="softmax", name="break_output")(x)
-    take_profit_output = layers.Dense(1, activation="sigmoid", name="take_profit_output")(x)
-
+    break_output = layers.Dense(2, activation="softmax", name="break_output")(x)
     # 创建模型
-    model = models.Model(inputs, [break_output, take_profit_output])
+    model = models.Model(inputs, [break_output])
 
     # 编译模型
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
 
-    model.compile(loss={"break_output": "sparse_categorical_crossentropy", "take_profit_output": "binary_crossentropy"},
-                  loss_weights={"break_output": 1.0, "take_profit_output": 0.5},
+    model.compile(loss="sparse_categorical_crossentropy",
                   optimizer=optimizer,
-                  metrics={"break_output": "accuracy", "take_profit_output": "binary_accuracy"})
+                  metrics="accuracy")
 
     return model
 
@@ -125,7 +90,7 @@ def lr_schedule_co(epoch, lr):
         return lr * tf.math.exp(-0.1)
 
 
-def train_bolling_model_co(df):
+def train_bolling_model_co(label_feature_list):
     # 检查GPU是否可用
     physical_devices = tf.config.list_physical_devices('GPU')
     if physical_devices:
@@ -134,32 +99,29 @@ def train_bolling_model_co(df):
     else:
         print('No GPU found, using CPU')
 
-    sequences = extract_sequence(df)
+    col = ['id', 'close_time']
 
-    train_sequences, test_sequences = split_bolling_train_data_co(sequences)
+    sequence_length = len(label_feature_list)  # 获取序列长度
+    feature_count = label_feature_list[0]['sequence'].shape[1] - len(col)  # 减去标签列、ID列和close_time列
 
-    col = ['break_label', 'take_profit_label', 'id', 'close_time']
+    train_sequences, test_sequences = split_bolling_train_data_co(label_feature_list)
 
-    feature_count = df.shape[1] - len(col)
-
-    del df
+    del label_feature_list
 
     def gen(sequences):
         for seq in sequences:
-            X = seq.drop(columns=col).values
-            y_break = seq['break_label'].values
-            y_take_profit = seq['take_profit_label'].values
-            yield X, {"break_output": y_break, "take_profit_output": y_take_profit}
+            X = seq['sequence'].drop(columns=col).values
+            Y = (seq['label'])
+            yield X, {"break_output": Y}
 
     train_dataset = tf.data.Dataset.from_generator(
         lambda: gen(train_sequences),
         output_signature=(
             tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
             {
-                "break_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                "take_profit_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-            },
-        ),
+                "break_output": tf.TensorSpec(shape=(), dtype=tf.float32),
+            }
+        )
     )
 
     test_dataset = tf.data.Dataset.from_generator(
@@ -167,10 +129,9 @@ def train_bolling_model_co(df):
         output_signature=(
             tf.TensorSpec(shape=(None, feature_count), dtype=tf.float32),
             {
-                "break_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-                "take_profit_output": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-            },
-        ),
+                "break_output": tf.TensorSpec(shape=(), dtype=tf.float32),
+            }
+        )
     )
 
     strategy = tf.distribute.MirroredStrategy()
@@ -192,7 +153,7 @@ def train_bolling_model_co(df):
             LearningRateScheduler(lr_schedule_co),
         ]
 
-        model = build_bolling_time_series_transformer_model_co(feature_count)
+        model = build_bolling_time_series_transformer_model_co(feature_count, sequence_length)
 
         history = model.fit(
             train_dataset.batch(1),  # Setting batch size to 1 to handle sequences one by one
@@ -201,22 +162,24 @@ def train_bolling_model_co(df):
             callbacks=callbacks_list
         )
 
-    loss, break_loss, take_profit_loss, break_accuracy, take_profit_accuracy = model.evaluate(test_dataset.batch(1))
+    loss, break_accuracy = model.evaluate(test_dataset.batch(1))
 
     print(f"Break output accuracy: {break_accuracy * 100:.2f}%")
-    print(f"Take profit output accuracy: {take_profit_accuracy * 100:.2f}%")
 
     model.save("/content/trading_analysis/static/model/bollinger_break_model.keras")
     return model, history
 
 
-filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
-filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
+dir_path = '../static/cache/'
+dir_path_ = '/content/trading_analysis/static/cache/'
+filepath = "feature_perpusdt_5m_290_0.6_32_0.pkl"
+fp = dir_path_ + filepath
 
-df = None
-if os.path.exists(filepath):
-    print(f"Loading existing feature file: {filepath}")
-    df = pd.read_csv(filepath)
+se = None
+if os.path.exists(fp):
+    print(f"Loading existing feature file: {fp}")
+    with open(fp, 'rb') as f:
+        se = pickle.load(f)
 
-m, h = train_bolling_model_co(df)
+m, h = train_bolling_model_co(se)
 print(h)
