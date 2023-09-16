@@ -94,8 +94,8 @@ def create_moving_window(data_frame):
     return data_frame
 
 
-m = create_bollinger_bands_feature('perpusdt', '5m', 290, 0.6, 32, 0)
-sequence_length = len(m)  # 获取序列长度
-print(sequence_length)
-feature_count = m[0]['sequence'].shape[1] - 4
-print(feature_count)
+# m = create_bollinger_bands_feature('perpusdt', '5m', 290, 0.6, 32, 0)
+# sequence_length = len(m)  # 获取序列长度
+# print(sequence_length)
+# feature_count = m[0]['sequence'].shape[1] - 4
+# print(feature_count)
