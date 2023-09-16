@@ -7,30 +7,33 @@ from keras import layers, models
 from keras.src.callbacks import ModelCheckpoint, EarlyStopping, LearningRateScheduler
 
 
-def split_bolling_train_data_co(df):
-    train_size = int(len(df) * 0.9)
-    train_data, test_data = df[:train_size], df[train_size:]
+def split_bolling_train_data_co(sequence):
+    # 计算90%的位置
+    train_size = int(len(sequence) * 0.9)
+
+    train_data = sequence[:train_size]
+    test_data = sequence[train_size:]
+
     return train_data, test_data
 
 
 def extract_sequence(df):
     sequences = []
 
-    last_break_point = 0
+    last_break_end_point = 0
 
     for index, row in df.iterrows():
         current_label = row['break_label']
         if current_label in {3, 6}:
-            # Determine the minimum start index to get at least a length of 12
-            t = df.iloc[last_break_point:index + 1]
-            if len(t) < 40:
-                i = max(0, index - 40)
+            t = df.iloc[last_break_end_point:index + 1]
+            if len(t) < 36:
+                i = max(0, index - 36)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
-            last_break_point = index + 1
+            last_break_end_point = index
 
-    if last_break_point < len(df):
-        sequences.append(df.iloc[last_break_point:])
+    if last_break_end_point < len(df):
+        sequences.append(df.iloc[last_break_end_point:])
 
     for i, seq in enumerate(sequences):
         if len(seq) > 300:
@@ -50,7 +53,7 @@ def extract_sequence(df):
             potential_remove_indices = set(mid_labels_indices) - set(take_profit_indices)
 
             # Remove half of the potential_remove_indices
-            indices_to_remove = random.sample(potential_remove_indices, len(potential_remove_indices) // 2)
+            indices_to_remove = random.sample(list(potential_remove_indices), len(potential_remove_indices) // 2)
 
             # Update the sequence in the list
             sequences[i] = seq.drop(index=indices_to_remove)
@@ -58,8 +61,7 @@ def extract_sequence(df):
     return sequences
 
 
-def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num_heads=4, dropout_rate=0.5):
-    feature_count = df.shape[1] - 4  # 减去标签列、ID列和close_time列
+def build_bolling_time_series_transformer_model_co(feature_count, num_layers=2, dff=64, num_heads=4, dropout_rate=0.5):
 
     # 定义模型的输入
     inputs = layers.Input(shape=(None, feature_count))
@@ -110,7 +112,7 @@ def build_bolling_time_series_transformer_model_co(df, num_layers=2, dff=64, num
     model.compile(loss={"break_output": "sparse_categorical_crossentropy", "take_profit_output": "binary_crossentropy"},
                   loss_weights={"break_output": 1.0, "take_profit_output": 0.5},
                   optimizer=optimizer,
-                  metrics={"break_output": "accuracy", "take_profit_output": "accuracy"})
+                  metrics={"break_output": "accuracy", "take_profit_output": "binary_accuracy"})
 
     return model
 
@@ -132,14 +134,15 @@ def train_bolling_model_co(df):
     else:
         print('No GPU found, using CPU')
 
-    train_data, test_data = split_bolling_train_data_co(df)
+    sequences = extract_sequence(df)
 
-    train_sequences = extract_sequence(train_data)
-    test_sequences = extract_sequence(test_data)
+    train_sequences, test_sequences = split_bolling_train_data_co(sequences)
 
     col = ['break_label', 'take_profit_label', 'id', 'close_time']
 
     feature_count = df.shape[1] - len(col)
+
+    del df
 
     def gen(sequences):
         for seq in sequences:
@@ -170,8 +173,6 @@ def train_bolling_model_co(df):
         ),
     )
 
-    del df
-
     strategy = tf.distribute.MirroredStrategy()
     print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
@@ -191,7 +192,7 @@ def train_bolling_model_co(df):
             LearningRateScheduler(lr_schedule_co),
         ]
 
-        model = build_bolling_time_series_transformer_model_co(train_data)
+        model = build_bolling_time_series_transformer_model_co(feature_count)
 
         history = model.fit(
             train_dataset.batch(1),  # Setting batch size to 1 to handle sequences one by one
@@ -212,9 +213,8 @@ filepath = '/content/trading_analysis/static/cache/feature_perpusdt_5m_290_0.6_3
 filepath_ = '../static/cache/feature_perpusdt_5m_290_0.6_32_0.csv'
 
 df = None
-if os.path.exists(filepath):
-    print(f"Loading existing feature file: {filepath}")
-    df = pd.read_csv(filepath)
+if os.path.exists(filepath_):
+    print(f"Loading existing feature file: {filepath_}")
+    df = pd.read_csv(filepath_)
 
-m, h = train_bolling_model_co(df)
-print(h)
+train_bolling_model_co(df)
