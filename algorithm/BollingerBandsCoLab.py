@@ -26,8 +26,8 @@ def extract_sequence(df):
         current_label = row['break_label']
         if current_label in {3, 6}:
             t = df.iloc[last_break_end_point:index + 1]
-            if len(t) < 36:
-                i = max(0, index - 36)
+            if len(t) < 52:
+                i = max(0, index - 52)
                 t = df.iloc[i:index + 1]
             sequences.append(t)
             last_break_end_point = index
@@ -36,7 +36,7 @@ def extract_sequence(df):
         sequences.append(df.iloc[last_break_end_point:])
 
     for i, seq in enumerate(sequences):
-        if len(seq) > 300:
+        if len(seq) > 360:
             # Find the indices of the mid labels
             mid_labels_indices = seq[(seq['break_label'] == 2) |
                                      (seq['break_label'] == 5)].index
@@ -185,7 +185,7 @@ def train_bolling_model_co(df):
                 restore_best_weights=True
             ),  # 停止训练当验证损失不再改善
             ModelCheckpoint(
-                filepath='/content/trading_analysis/static/model/bollinger_break_model.h5',
+                filepath='/content/trading_analysis/static/model/bollinger_break_model.keras',
                 monitor='val_loss',
                 save_best_only=True
             ),  # 保存验证损失最低的模型
@@ -206,7 +206,7 @@ def train_bolling_model_co(df):
     print(f"Break output accuracy: {break_accuracy * 100:.2f}%")
     print(f"Take profit output accuracy: {take_profit_accuracy * 100:.2f}%")
 
-    model.save("/content/trading_analysis/static/model/bollinger_break_model.h5")
+    model.save("/content/trading_analysis/static/model/bollinger_break_model.keras")
     return model, history
 
 
