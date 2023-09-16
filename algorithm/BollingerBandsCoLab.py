@@ -61,7 +61,7 @@ def extract_sequence(df):
     return sequences
 
 
-def build_bolling_time_series_transformer_model_co(feature_count, num_layers=2, dff=64, num_heads=4, dropout_rate=0.5):
+def build_bolling_time_series_transformer_model_co(feature_count, num_layers=6, dff=256, num_heads=8, dropout_rate=0.5):
 
     # 定义模型的输入
     inputs = layers.Input(shape=(None, feature_count))
